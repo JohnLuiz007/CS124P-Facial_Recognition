@@ -2,8 +2,6 @@ import tkinter as tk
 import cv2
 from PIL import Image, ImageTk, ImageDraw, ImageFont
 import numpy as np
-import tempfile
-import os
 import time
 import mediapipe as mp
 
@@ -21,20 +19,10 @@ class WebCamApp:
         self.latest_frame = None
         self.start_time = None
 
-        # Load reference images and compute average encoding for each face shape
-        self.known_shapes = {
-            "diamond": [],
-            "heart": [],
-            "oblong": [],
-            "oval": [],
-            "round": [],
-            "square": []
-        }
-
         # Hairstyle suggestions
         self.hairstyle_suggestions = hairstyle_suggestions
 
-        # Load and set the background image
+        # Load and set bg image
         self.background_image = Image.open(background_image_path)
         self.background_photo = ImageTk.PhotoImage(self.background_image)
 
@@ -46,9 +34,12 @@ class WebCamApp:
         self.print_button = tk.Button(self.window, text="Print Image", command=self.print_image, height=5, width=125)
         self.print_button.pack(pady=10, padx=10)
 
-        # Label for hairstyle suggestions
+        # Label for hairstyle suggestions and results
         self.suggestion_label = tk.Label(self.window, text="", font=("Helvetica", 14), fg="black")
         self.suggestion_label.pack(pady=10)
+
+        self.calculation_label = tk.Label(self.window, text="", font=("Helvetica", 10), fg="black")
+        self.calculation_label.pack(pady=5)
 
         # Canvas for webcam
         self.canvas = tk.Canvas(self.window, width=self.background_image.width, height=self.background_image.height)
@@ -78,9 +69,9 @@ class WebCamApp:
             self.canvas.create_image(0, 0, anchor=tk.NW, image=photo)
             self.photo = photo  # Keep reference to avoid garbage collection
 
-        # Check if 5 seconds have passed
+        # Check if 5 seconds have passed (uses schedule library)
         if time.time() - self.start_time >= 5:
-            # Stop capturing and process the last frame (determines what frame would be used for processing)
+            # Stop capturing and process the last frame
             self.process_last_frame()
         else:
             # Scheduler (lower digit = faster frames)
@@ -88,32 +79,54 @@ class WebCamApp:
 
     def process_last_frame(self):
         if self.latest_frame is not None:
-            # Convert BGR frame to RGB for face mesh processing
+            # Convert BGR frame to RGB for face mesh processing 
             rgb_frame = cv2.cvtColor(self.latest_frame, cv2.COLOR_BGR2RGB)
             # Process frame with face mesh model
             results = self.face_mesh.process(rgb_frame)
 
             if results.multi_face_landmarks:
                 for face_landmarks in results.multi_face_landmarks:
-                    # Extract facial landmarks
+
+                    # Extract facial landmarks (visualized as red dots in the print image function)
                     landmarks = face_landmarks.landmark
-                    # Example: Compute geometric properties like the ratio of jaw to forehead
-                    # Calculate the distances or ratios between relevant landmarks to classify face shapes
-                    
-                    # Use simple ratios or distances (this is a basic example)
+
+
+                    # following code is for calc distances for face shapes
+
+                    # Example distances for detecting face shape (uses numpy library)
                     distance_cheekbone_to_chin = np.linalg.norm(np.array([landmarks[234].x, landmarks[234].y]) - np.array([landmarks[454].x, landmarks[454].y]))
                     distance_forehead = np.linalg.norm(np.array([landmarks[10].x, landmarks[10].y]) - np.array([landmarks[152].x, landmarks[152].y]))
+                    distance_eyes = np.linalg.norm(np.array([landmarks[33].x, landmarks[33].y]) - np.array([landmarks[133].x, landmarks[133].y]))
 
-                    # Use these metrics to classify the face shape (basic thresholding)
-                    if distance_cheekbone_to_chin > distance_forehead:
+                    # Display calculations in the label
+                    calculations = f"Cheekbone to Chin Distance: {distance_cheekbone_to_chin:.4f}\n"
+                    calculations += f"Forehead Distance: {distance_forehead:.4f}\n"
+                    calculations += f"Eyes Distance: {distance_eyes:.4f}"
+
+                    self.calculation_label.config(text=calculations)
+
+                    # Geometric method for classifying face shape
+                    if distance_cheekbone_to_chin > distance_forehead and distance_eyes < distance_forehead:
                         face_shape = "round"
-                    else:
+                    elif distance_cheekbone_to_chin < distance_forehead and distance_eyes > distance_cheekbone_to_chin:
                         face_shape = "oval"
+                    elif distance_cheekbone_to_chin > distance_forehead and distance_eyes > distance_forehead:
+                        face_shape = "square"
+                    elif distance_eyes > distance_cheekbone_to_chin and distance_cheekbone_to_chin > distance_forehead:
+                        face_shape = "heart"
+                    elif distance_eyes > distance_forehead and distance_cheekbone_to_chin < distance_forehead:
+                        face_shape = "diamond"
+                    else:
+                        face_shape = "oblong"
 
-                    # Display results on the frame
+                    # Display result (not in terminal but on window)
                     self.suggestion_label.config(text=f"Face Shape: {face_shape}\nSuggested Hairstyles: {', '.join(self.hairstyle_suggestions[face_shape])}")
 
-                    # Draw face landmarks for visualization (optional)
+                    # Print results in terminal for debugging
+                    print(f"Detected Face Shape: {face_shape}")
+                    print(f"Suggested Hairstyles: {', '.join(self.hairstyle_suggestions[face_shape])}")
+
+                    # Draw face landmarks for visualization (optional tbh can remove this option tis just for visualizing what program's lookin)
                     img_pil = Image.fromarray(self.latest_frame)
                     draw = ImageDraw.Draw(img_pil)
                     for landmark in landmarks:
@@ -134,18 +147,14 @@ class WebCamApp:
             font = ImageFont.load_default()
             draw.text((10, 10), text_to_draw, fill="green", font=font)
 
-            temp_file = tempfile.NamedTemporaryFile(delete=False, suffix='.png')
-            pil_image.save(temp_file.name)
-            os.startfile(temp_file.name)
+            pil_image.show()
 
     def __del__(self):
         if self.cap is not None:
             self.cap.release()
 
-# Main reference folder for face shape images
-reference_image_folder = "C:/Users/Chris/OneDrive/Desktop/projectHDv1.0.2/reference_images"
 
-# Suggested hairstyles 
+# Suggested hairstyles lsit
 hairstyle_suggestions = {
     "diamond": ["Style1", "Style2", "Style3"],
     "heart": ["Style1", "Style2", "Style3"],
@@ -155,11 +164,11 @@ hairstyle_suggestions = {
     "square": ["Style1", "Style2", "Style3"]
 }
 
-# Background image path
-background_image_path = "C:/Users/Chris/OneDrive/Desktop/projectHD/background2.jpg"
+# Bg image path
+background_image_path = "C:/Users/Chris/OneDrive/Desktop/projectHDv1.0.2/background2.jpg"
 
 # Initialize the app
 root = tk.Tk()
 root.geometry("1100x800")
-app = WebCamApp(root, reference_image_folder, hairstyle_suggestions, background_image_path)
+app = WebCamApp(root, "C:/Users/Chris/OneDrive/Desktop/projectHDv1.0.2/reference_images", hairstyle_suggestions, background_image_path)
 root.mainloop()
