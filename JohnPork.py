@@ -8,19 +8,25 @@ import os
 import time
 
 class WebCamApp:
-    def __init__(self, window, reference_image_paths, hairstyle_suggestions, background_image_path):
+    def __init__(self, window, reference_image_folder, hairstyle_suggestions, background_image_path):
         self.window = window
         self.window.title("Webcam App")
 
-        # Load reference images for each face shape and store their encodings
+        # Load reference images and compute average encoding for each face shape
         self.known_faces = []
         self.known_names = []
-        for name, paths in reference_image_paths.items():
-            for path in paths:
-                image = face_recognition.load_image_file(path)
-                encoding = face_recognition.face_encodings(image)[0]
-                self.known_faces.append(encoding)
-                self.known_names.append(name)
+
+        # Iterate through each subfolder in the reference image folder
+        for face_shape in os.listdir(reference_image_folder):
+            shape_folder_path = os.path.join(reference_image_folder, face_shape)
+            if os.path.isdir(shape_folder_path):  # Check if it's a directory
+                for image_file in os.listdir(shape_folder_path):
+                    image_path = os.path.join(shape_folder_path, image_file)
+                    image = face_recognition.load_image_file(image_path)
+                    encoding = face_recognition.face_encodings(image)
+                    if encoding:
+                        self.known_faces.append(encoding[0])
+                        self.known_names.append(face_shape)  # Use folder name as face shape label
 
         # Hairstyle suggestions
         self.hairstyle_suggestions = hairstyle_suggestions
@@ -84,19 +90,31 @@ class WebCamApp:
 
     def process_last_frame(self):
         if self.latest_frame is not None:
-            # Detect faces and match face shape
-            face_locations = face_recognition.face_locations(self.latest_frame)
+            # Detect faces
+            face_locations = face_recognition.face_locations(self.latest_frame, model="hog")  # Try 'hog' if 'cnn' fails
+            print("Face locations:", face_locations)  # Debug print
             face_encodings = face_recognition.face_encodings(self.latest_frame, face_locations)
 
             for (top, right, bottom, left), face_encoding in zip(face_locations, face_encodings):
                 # Compare with known face shapes
                 distances = face_recognition.face_distance(self.known_faces, face_encoding)
+                print("Distances:", distances)  # Debug print
                 best_match_index = np.argmin(distances)
-                name = self.known_names[best_match_index]
 
-                # Display the best match
-                suggested_hairstyles = self.hairstyle_suggestions.get(name, ["No suggestion available"])
-                self.suggestion_label.config(text=f"Hairstyle suggestions for {name}: " + ", ".join(suggested_hairstyles))
+                # Apply a threshold for the closest match
+                threshold = 0.7
+                if distances[best_match_index] < threshold:
+                    name = self.known_names[best_match_index]
+                else:
+                    name = "Unknown"
+                print("Best match:", name, "with distance:", distances[best_match_index])  # Debug print
+
+                # Display results on the frame
+                img_pil = Image.fromarray(self.latest_frame)
+                draw = ImageDraw.Draw(img_pil)
+                draw.rectangle(((left, top), (right, bottom)), outline="green", width=3)
+                draw.text((left, top - 20), name, fill="green")
+                self.latest_frame = np.array(img_pil)
 
     def print_image(self):
         if self.latest_frame is not None:
@@ -117,29 +135,24 @@ class WebCamApp:
         if self.cap is not None:
             self.cap.release()
 
-# Reference images for each face shape (guys di talaga gagana toh pag di siya based sa file path niyo)
-reference_image_paths = {
-    "diamond face shape": ["C:/Users/Chris/OneDrive/Desktop/projectHD/face type abstract #1/diamond.png", "C:/Users/Chris/OneDrive/Desktop/projectHD/face type irl #1/diamondFace.jpg"],
-    "heart face shape": ["C:/Users/Chris/OneDrive/Desktop/projectHD/face type abstract #1/heart.png", "C:/Users/Chris/OneDrive/Desktop/projectHD/face type irl #1/heartFace.jpg"],
-    "oblong face shape": ["C:/Users/Chris/OneDrive/Desktop/projectHD/face type abstract #1/oblong.png", "C:/Users/Chris/OneDrive/Desktop/projectHD/face type irl #1/oblongFace.png"],
-    "oval face shape": ["C:/Users/Chris/OneDrive/Desktop/projectHD/face type abstract #1/oval.png", "C:/Users/Chris/OneDrive/Desktop/projectHD/face type irl #1/ovalFace.jpg"],
-    "round face shape": ["C:/Users/Chris/OneDrive/Desktop/projectHD/face type abstract #1/round.png", "C:/Users/Chris/OneDrive/Desktop/projectHD/face type irl #1/roundFace.jpg"],
-    "square face shape": ["C:/Users/Chris/OneDrive/Desktop/projectHD/face type abstract #1/square.png", "C:/Users/Chris/OneDrive/Desktop/projectHD/face type irl #1/squareFace.jpg"]
-}
+# Main reference folder for face shape images
+reference_image_folder = "C:/Users/Chris/OneDrive/Desktop/projectHDv1.0.2/reference_images"
 
 # Suggested hairstyles 
 hairstyle_suggestions = {
-    "diamond face shape": ["filler1", "filler2", "filler3"],
-    "heart face shape": ["filler1", "filler2", "filler3"],
-    "oblong face shape": ["filler1", "filler2", "filler3"],
-    "oval face shape": ["filler1", "filler2", "filler3"],
-    "round face shape": ["filler1", "filler2", "filler3"],
-    "square face shape": ["filler1", "filler2", "filler3"]
+    "diamond face shape": ["Style1", "Style2", "Style3"],
+    "heart face shape": ["Style1", "Style2", "Style3"],
+    "oblong face shape": ["Style1", "Style2", "Style3"],
+    "oval face shape": ["Style1", "Style2", "Style3"],
+    "round face shape": ["Style1", "Style2", "Style3"],
+    "square face shape": ["Style1", "Style2", "Style3"]
 }
 
-# Background image path (same idea dito)
+# Background image path
 background_image_path = "C:/Users/Chris/OneDrive/Desktop/projectHD/background2.jpg"
+
+# Initialize the app
 root = tk.Tk()
 root.geometry("1100x800")
-app = WebCamApp(root, reference_image_paths, hairstyle_suggestions, background_image_path)
+app = WebCamApp(root, reference_image_folder, hairstyle_suggestions, background_image_path)
 root.mainloop()
