@@ -129,27 +129,24 @@ class WebCamApp:
                             min_distance = distance
                             closest_shape = shape
 
-                    # Display closest shape and suggestions
-                    self.suggestion_label.config(
-                        text=f"Face Shape: {closest_shape}\nSuggested Hairstyles: {', '.join(self.hairstyle_suggestions.get(closest_shape, []))}"
-                    )
+                # Display closest shape and suggestions
+                self.suggestion_label.config(
+                    text=f"Face Shape: {closest_shape}\nSuggested Hairstyles: {', '.join(self.hairstyle_suggestions.get(closest_shape, []))}"
+                )
 
+                
 
-                    #debugging shit (can remove before presentation)
-                    print(f"distance: {distance}.")
-                    print(f"results: {results}")
-                    print(f"landmarks: {landmarks}")
- 
- 
-                    # Draw face landmarks for visualization (optional tbh, can remove this option tis just for visualizing where the dots are)
-                    img_pil = Image.fromarray(self.latest_frame)
-                    draw = ImageDraw.Draw(img_pil)
-                    for landmark in landmarks:
-                        x = int(landmark.x * img_pil.width)
-                        y = int(landmark.y * img_pil.height)
-                        draw.ellipse((x-2, y-2, x+2, y+2), fill="red")
+                # Draw face landmarks for visualization
+                img_pil = Image.fromarray(self.latest_frame)
+                draw = ImageDraw.Draw(img_pil)
+                for landmark in landmarks:
+                    # Since landmark is a 2D array, landmark[0] = x, landmark[1] = y
+                    x = int(landmark[0] * img_pil.width)
+                    y = int(landmark[1] * img_pil.height)
+                    draw.ellipse((x-2, y-2, x+2, y+2), fill="red")
 
-                    self.latest_frame = np.array(img_pil)
+                self.latest_frame = np.array(img_pil)
+
 
 
 
@@ -158,8 +155,17 @@ class WebCamApp:
         if self.latest_frame is not None:
             pil_image = Image.fromarray(self.latest_frame)
             draw = ImageDraw.Draw(pil_image)
-            face_shape = self.suggestion_label.cget("text").split(": ")[1].split("\n")[0]
-            hairstyles = self.suggestion_label.cget("text").split(": ")[2] if ":" in self.suggestion_label.cget("text") else "No suggestions"
+        
+            label_text = self.suggestion_label.cget("text")
+        
+            # Check if text contains ": " 
+            if ": " in label_text:
+                face_shape = label_text.split(": ")[1].split("\n")[0]
+                hairstyles = label_text.split(": ")[2] if ":" in label_text else "No suggestions"
+            else:
+                face_shape = "Unknown"
+                hairstyles = "No suggestions"
+        
             text_to_draw = f"Face Shape: {face_shape}\nSuggested Hairstyles: {hairstyles}"
 
             font = ImageFont.load_default()
