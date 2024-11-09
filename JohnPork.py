@@ -4,6 +4,7 @@ from PIL import Image, ImageTk, ImageDraw, ImageFont
 import numpy as np
 import time
 import mediapipe as mp
+import os
 
 class WebCamApp:
     def __init__(self, window, reference_image_folder, hairstyle_suggestions, background_image_path):
@@ -26,6 +27,10 @@ class WebCamApp:
         self.background_image = Image.open(background_image_path)
         self.background_photo = ImageTk.PhotoImage(self.background_image)
 
+        # Reference images and averages
+        self.reference_image_folder = reference_image_folder
+        self.face_shape_averages = self.compute_averages()
+
         # Start button to initiate detection
         self.start_button = tk.Button(self.window, text="Start Detector", command=self.start_webcam, height=5, width=125)
         self.start_button.pack(pady=10, padx=10)
@@ -34,10 +39,9 @@ class WebCamApp:
         self.print_button = tk.Button(self.window, text="Print Image", command=self.print_image, height=5, width=125)
         self.print_button.pack(pady=10, padx=10)
 
-        # Label for hairstyle suggestions and results
+        # Labels for suggestions and calculations
         self.suggestion_label = tk.Label(self.window, text="", font=("Helvetica", 14), fg="black")
         self.suggestion_label.pack(pady=10)
-
         self.calculation_label = tk.Label(self.window, text="", font=("Helvetica", 10), fg="black")
         self.calculation_label.pack(pady=5)
 
@@ -45,8 +49,40 @@ class WebCamApp:
         self.canvas = tk.Canvas(self.window, width=self.background_image.width, height=self.background_image.height)
         self.canvas.pack()
 
+
+        #computes averages of landmarks in images folder
+    def compute_averages(self):
+        face_shape_averages = {}
+
+        for shape in os.listdir(self.reference_image_folder):
+            folder_path = os.path.join(self.reference_image_folder, shape)
+            landmarks_list = []
+
+            for image_file in os.listdir(folder_path):
+                image_path = os.path.join(folder_path, image_file)
+                landmarks = self.compute_landmarks(image_path)
+                if landmarks is not None:
+                    landmarks_list.append(landmarks)
+
+            if landmarks_list:
+                face_shape_averages[shape] = np.mean(landmarks_list, axis=0)
+
+        return face_shape_averages
+
+
+    #averages the points of the landmarks in images folder
+    def compute_landmarks(self, image_path):
+        image = cv2.imread(image_path)
+        rgb_image = cv2.cvtColor(image, cv2.COLOR_BGR2RGB)
+        results = self.face_mesh.process(rgb_image)
+
+        if results.multi_face_landmarks:
+            return np.array([[lm.x, lm.y] for lm in results.multi_face_landmarks[0].landmark])
+        return None
+
+
+
     def start_webcam(self):
-        # Start webcam capture
         self.cap = cv2.VideoCapture(0)
         if not self.cap.isOpened():
             print("Cannot open webcam")
@@ -54,11 +90,11 @@ class WebCamApp:
         self.start_time = time.time()
         self.update_frame()
 
+
+
     def update_frame(self):
-        # Capture frame-by-frame from webcam
         ret, frame = self.cap.read()
         if ret:
-            # Convert frame to RGB
             rgb_frame = cv2.cvtColor(frame, cv2.COLOR_BGR2RGB)
             self.latest_frame = rgb_frame  # Store the last frame
 
@@ -69,64 +105,43 @@ class WebCamApp:
             self.canvas.create_image(0, 0, anchor=tk.NW, image=photo)
             self.photo = photo  # Keep reference to avoid garbage collection
 
-        # Check if 5 seconds have passed (uses schedule library)
         if time.time() - self.start_time >= 5:
-            # Stop capturing and process the last frame
             self.process_last_frame()
         else:
-            # Scheduler (lower digit = faster frames)
             self.window.after(10, self.update_frame)
 
+
+    #main logic, gets avg of landmarks in imgs folder then compares with current landmark result from webcam
     def process_last_frame(self):
         if self.latest_frame is not None:
-            # Convert BGR frame to RGB for face mesh processing 
             rgb_frame = cv2.cvtColor(self.latest_frame, cv2.COLOR_BGR2RGB)
-            # Process frame with face mesh model
             results = self.face_mesh.process(rgb_frame)
 
             if results.multi_face_landmarks:
                 for face_landmarks in results.multi_face_landmarks:
+                    landmarks = np.array([[lm.x, lm.y] for lm in face_landmarks.landmark])
 
-                    # Extract facial landmarks (visualized as red dots in the print image function)
-                    landmarks = face_landmarks.landmark
+                    # Find closest face shape based on average landmarks
+                    closest_shape, min_distance = None, float('inf')
+                    for shape, avg_landmarks in self.face_shape_averages.items():
+                        distance = np.linalg.norm(landmarks - avg_landmarks)
+                        if distance < min_distance:
+                            min_distance = distance
+                            closest_shape = shape
+
+                    # Display closest shape and suggestions
+                    self.suggestion_label.config(
+                        text=f"Face Shape: {closest_shape}\nSuggested Hairstyles: {', '.join(self.hairstyle_suggestions.get(closest_shape, []))}"
+                    )
 
 
-                    # following code is for calc distances for face shapes
-
-                    # Example distances for detecting face shape (uses numpy library)
-                    distance_cheekbone_to_chin = np.linalg.norm(np.array([landmarks[234].x, landmarks[234].y]) - np.array([landmarks[454].x, landmarks[454].y]))
-                    distance_forehead = np.linalg.norm(np.array([landmarks[10].x, landmarks[10].y]) - np.array([landmarks[152].x, landmarks[152].y]))
-                    distance_eyes = np.linalg.norm(np.array([landmarks[33].x, landmarks[33].y]) - np.array([landmarks[133].x, landmarks[133].y]))
-
-                    # Display calculations in the label
-                    calculations = f"Cheekbone to Chin Distance: {distance_cheekbone_to_chin:.4f}\n"
-                    calculations += f"Forehead Distance: {distance_forehead:.4f}\n"
-                    calculations += f"Eyes Distance: {distance_eyes:.4f}"
-
-                    self.calculation_label.config(text=calculations)
-
-                    # Geometric method for classifying face shape
-                    if distance_cheekbone_to_chin > distance_forehead and distance_eyes < distance_forehead:
-                        face_shape = "round"
-                    elif distance_cheekbone_to_chin < distance_forehead and distance_eyes > distance_cheekbone_to_chin:
-                        face_shape = "oval"
-                    elif distance_cheekbone_to_chin > distance_forehead and distance_eyes > distance_forehead:
-                        face_shape = "square"
-                    elif distance_eyes > distance_cheekbone_to_chin and distance_cheekbone_to_chin > distance_forehead:
-                        face_shape = "heart"
-                    elif distance_eyes > distance_forehead and distance_cheekbone_to_chin < distance_forehead:
-                        face_shape = "diamond"
-                    else:
-                        face_shape = "oblong"
-
-                    # Display result (not in terminal but on window)
-                    self.suggestion_label.config(text=f"Face Shape: {face_shape}\nSuggested Hairstyles: {', '.join(self.hairstyle_suggestions[face_shape])}")
-
-                    # Print results in terminal for debugging
-                    print(f"Detected Face Shape: {face_shape}")
-                    print(f"Suggested Hairstyles: {', '.join(self.hairstyle_suggestions[face_shape])}")
-
-                    # Draw face landmarks for visualization (optional tbh can remove this option tis just for visualizing what program's lookin)
+                    #debugging shit (can remove before presentation)
+                    print(f"distance: {distance}.")
+                    print(f"results: {results}")
+                    print(f"landmarks: {landmarks}")
+ 
+ 
+                    # Draw face landmarks for visualization (optional tbh, can remove this option tis just for visualizing where the dots are)
                     img_pil = Image.fromarray(self.latest_frame)
                     draw = ImageDraw.Draw(img_pil)
                     for landmark in landmarks:
@@ -136,12 +151,15 @@ class WebCamApp:
 
                     self.latest_frame = np.array(img_pil)
 
+
+
+    #prints image and result + points
     def print_image(self):
         if self.latest_frame is not None:
             pil_image = Image.fromarray(self.latest_frame)
             draw = ImageDraw.Draw(pil_image)
-            face_shape = self.suggestion_label.cget("text").split(": ")[0] if self.suggestion_label.cget("text") else "Unknown"
-            hairstyles = self.suggestion_label.cget("text").split(": ")[1] if ":" in self.suggestion_label.cget("text") else "No suggestions"
+            face_shape = self.suggestion_label.cget("text").split(": ")[1].split("\n")[0]
+            hairstyles = self.suggestion_label.cget("text").split(": ")[2] if ":" in self.suggestion_label.cget("text") else "No suggestions"
             text_to_draw = f"Face Shape: {face_shape}\nSuggested Hairstyles: {hairstyles}"
 
             font = ImageFont.load_default()
@@ -149,12 +167,15 @@ class WebCamApp:
 
             pil_image.show()
 
+
+
     def __del__(self):
         if self.cap is not None:
             self.cap.release()
 
 
-# Suggested hairstyles lsit
+
+# Hairstyle suggestions
 hairstyle_suggestions = {
     "diamond": ["Style1", "Style2", "Style3"],
     "heart": ["Style1", "Style2", "Style3"],
@@ -164,10 +185,8 @@ hairstyle_suggestions = {
     "square": ["Style1", "Style2", "Style3"]
 }
 
-# Bg image path
 background_image_path = "C:/Users/Chris/OneDrive/Desktop/projectHDv1.0.2/background2.jpg"
 
-# Initialize the app
 root = tk.Tk()
 root.geometry("1100x800")
 app = WebCamApp(root, "C:/Users/Chris/OneDrive/Desktop/projectHDv1.0.2/reference_images", hairstyle_suggestions, background_image_path)
