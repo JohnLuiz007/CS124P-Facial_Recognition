@@ -1,32 +1,35 @@
 import tkinter as tk
 import cv2
 from PIL import Image, ImageTk, ImageDraw, ImageFont
-import face_recognition
 import numpy as np
 import tempfile
 import os
 import time
+import mediapipe as mp
 
 class WebCamApp:
     def __init__(self, window, reference_image_folder, hairstyle_suggestions, background_image_path):
         self.window = window
         self.window.title("Webcam App")
 
-        # Load reference images and compute average encoding for each face shape
-        self.known_faces = []
-        self.known_names = []
+        # Initialize mediapipe face mesh model
+        self.mp_face_mesh = mp.solutions.face_mesh
+        self.face_mesh = self.mp_face_mesh.FaceMesh()
 
-        # Iterate through each subfolder in the reference image folder
-        for face_shape in os.listdir(reference_image_folder):
-            shape_folder_path = os.path.join(reference_image_folder, face_shape)
-            if os.path.isdir(shape_folder_path):  # Check if it's a directory
-                for image_file in os.listdir(shape_folder_path):
-                    image_path = os.path.join(shape_folder_path, image_file)
-                    image = face_recognition.load_image_file(image_path)
-                    encoding = face_recognition.face_encodings(image)
-                    if encoding:
-                        self.known_faces.append(encoding[0])
-                        self.known_names.append(face_shape)  # Use folder name as face shape label
+        # Initialize variables for capturing
+        self.cap = None
+        self.latest_frame = None
+        self.start_time = None
+
+        # Load reference images and compute average encoding for each face shape
+        self.known_shapes = {
+            "diamond": [],
+            "heart": [],
+            "oblong": [],
+            "oval": [],
+            "round": [],
+            "square": []
+        }
 
         # Hairstyle suggestions
         self.hairstyle_suggestions = hairstyle_suggestions
@@ -50,11 +53,6 @@ class WebCamApp:
         # Canvas for webcam
         self.canvas = tk.Canvas(self.window, width=self.background_image.width, height=self.background_image.height)
         self.canvas.pack()
-
-        # Initialize variables for capturing
-        self.cap = None
-        self.latest_frame = None
-        self.start_time = None
 
     def start_webcam(self):
         # Start webcam capture
@@ -90,31 +88,40 @@ class WebCamApp:
 
     def process_last_frame(self):
         if self.latest_frame is not None:
-            # Detect faces
-            face_locations = face_recognition.face_locations(self.latest_frame, model="hog")  # Try 'hog' if 'cnn' fails
-            print("Face locations:", face_locations)  # Debug print
-            face_encodings = face_recognition.face_encodings(self.latest_frame, face_locations)
+            # Convert BGR frame to RGB for face mesh processing
+            rgb_frame = cv2.cvtColor(self.latest_frame, cv2.COLOR_BGR2RGB)
+            # Process frame with face mesh model
+            results = self.face_mesh.process(rgb_frame)
 
-            for (top, right, bottom, left), face_encoding in zip(face_locations, face_encodings):
-                # Compare with known face shapes
-                distances = face_recognition.face_distance(self.known_faces, face_encoding)
-                print("Distances:", distances)  # Debug print
-                best_match_index = np.argmin(distances)
+            if results.multi_face_landmarks:
+                for face_landmarks in results.multi_face_landmarks:
+                    # Extract facial landmarks
+                    landmarks = face_landmarks.landmark
+                    # Example: Compute geometric properties like the ratio of jaw to forehead
+                    # Calculate the distances or ratios between relevant landmarks to classify face shapes
+                    
+                    # Use simple ratios or distances (this is a basic example)
+                    distance_cheekbone_to_chin = np.linalg.norm(np.array([landmarks[234].x, landmarks[234].y]) - np.array([landmarks[454].x, landmarks[454].y]))
+                    distance_forehead = np.linalg.norm(np.array([landmarks[10].x, landmarks[10].y]) - np.array([landmarks[152].x, landmarks[152].y]))
 
-                # Apply a threshold for the closest match
-                threshold = 0.7
-                if distances[best_match_index] < threshold:
-                    name = self.known_names[best_match_index]
-                else:
-                    name = "Unknown"
-                print("Best match:", name, "with distance:", distances[best_match_index])  # Debug print
+                    # Use these metrics to classify the face shape (basic thresholding)
+                    if distance_cheekbone_to_chin > distance_forehead:
+                        face_shape = "round"
+                    else:
+                        face_shape = "oval"
 
-                # Display results on the frame
-                img_pil = Image.fromarray(self.latest_frame)
-                draw = ImageDraw.Draw(img_pil)
-                draw.rectangle(((left, top), (right, bottom)), outline="green", width=3)
-                draw.text((left, top - 20), name, fill="green")
-                self.latest_frame = np.array(img_pil)
+                    # Display results on the frame
+                    self.suggestion_label.config(text=f"Face Shape: {face_shape}\nSuggested Hairstyles: {', '.join(self.hairstyle_suggestions[face_shape])}")
+
+                    # Draw face landmarks for visualization (optional)
+                    img_pil = Image.fromarray(self.latest_frame)
+                    draw = ImageDraw.Draw(img_pil)
+                    for landmark in landmarks:
+                        x = int(landmark.x * img_pil.width)
+                        y = int(landmark.y * img_pil.height)
+                        draw.ellipse((x-2, y-2, x+2, y+2), fill="red")
+
+                    self.latest_frame = np.array(img_pil)
 
     def print_image(self):
         if self.latest_frame is not None:
@@ -140,12 +147,12 @@ reference_image_folder = "C:/Users/Chris/OneDrive/Desktop/projectHDv1.0.2/refere
 
 # Suggested hairstyles 
 hairstyle_suggestions = {
-    "diamond face shape": ["Style1", "Style2", "Style3"],
-    "heart face shape": ["Style1", "Style2", "Style3"],
-    "oblong face shape": ["Style1", "Style2", "Style3"],
-    "oval face shape": ["Style1", "Style2", "Style3"],
-    "round face shape": ["Style1", "Style2", "Style3"],
-    "square face shape": ["Style1", "Style2", "Style3"]
+    "diamond": ["Style1", "Style2", "Style3"],
+    "heart": ["Style1", "Style2", "Style3"],
+    "oblong": ["Style1", "Style2", "Style3"],
+    "oval": ["Style1", "Style2", "Style3"],
+    "round": ["Style1", "Style2", "Style3"],
+    "square": ["Style1", "Style2", "Style3"]
 }
 
 # Background image path
