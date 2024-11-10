@@ -15,9 +15,8 @@ class WebCamApp:
         self.window.title("Webcam App")
 
         # Load reference images and compute average encoding for each face shape
-        self.known_faces = np.array(list(all_face_encodings.values()))
-        self.known_names = list(all_face_encodings.keys())
-        print(self.known_names)
+        self.known_faces = np.array(list(all_face_encodings["encodings"]))
+        self.known_names = list(all_face_encodings["names"])
 
         # Hairstyle suggestions
         self.hairstyle_suggestions = hairstyle_suggestions
@@ -93,20 +92,20 @@ class WebCamApp:
                 best_match_index = np.argmin(distances)
 
                 # Apply a threshold for the closest match
-                threshold = 0.75
-                if distances[best_match_index] <= threshold:
-                    name = self.known_names[best_match_index]
-                else:
-                    name = "Unknown"
+                #threshold = 0.75
+                # if distances[best_match_index] <= threshold:
+                #     name = self.known_names[best_match_index]
+                # else:
+                #     name = "Unknown"
                 name = self.known_names[best_match_index]
                 print("Best match:", name, "with distance:", distances[best_match_index])  # Debug print
-
                 # Display results on the frame
                 img_pil = Image.fromarray(self.latest_frame)
                 draw = ImageDraw.Draw(img_pil)
                 draw.rectangle(((left, top), (right, bottom)), outline="green", width=3)
                 draw.text((left, top - 20), name, fill="green")
                 self.latest_frame = np.array(img_pil)
+
 
     def print_image(self):
         if self.latest_frame is not None:
