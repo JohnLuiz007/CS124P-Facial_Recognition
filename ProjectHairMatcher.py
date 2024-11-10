@@ -6,27 +6,18 @@ import numpy as np
 import tempfile
 import os
 import time
+import kagglehub
 
+import pickle
 class WebCamApp:
-    def __init__(self, window, reference_image_folder, hairstyle_suggestions, background_image_path):
+    def __init__(self, window, all_face_encodings, hairstyle_suggestions, background_image_path):
         self.window = window
         self.window.title("Webcam App")
 
         # Load reference images and compute average encoding for each face shape
-        self.known_faces = []
-        self.known_names = []
-
-        # Iterate through each subfolder in the reference image folder
-        for face_shape in os.listdir(reference_image_folder):
-            shape_folder_path = os.path.join(reference_image_folder, face_shape)
-            if os.path.isdir(shape_folder_path):  # Check if it's a directory
-                for image_file in os.listdir(shape_folder_path):
-                    image_path = os.path.join(shape_folder_path, image_file)
-                    image = face_recognition.load_image_file(image_path)
-                    encoding = face_recognition.face_encodings(image)
-                    if encoding:
-                        self.known_faces.append(encoding[0])
-                        self.known_names.append(face_shape)  # Use folder name as face shape label
+        self.known_faces = np.array(list(all_face_encodings.values()))
+        self.known_names = list(all_face_encodings.keys())
+        print(self.known_names)
 
         # Hairstyle suggestions
         self.hairstyle_suggestions = hairstyle_suggestions
@@ -102,11 +93,12 @@ class WebCamApp:
                 best_match_index = np.argmin(distances)
 
                 # Apply a threshold for the closest match
-                threshold = 0.7
-                if distances[best_match_index] < threshold:
+                threshold = 0.75
+                if distances[best_match_index] <= threshold:
                     name = self.known_names[best_match_index]
                 else:
                     name = "Unknown"
+                name = self.known_names[best_match_index]
                 print("Best match:", name, "with distance:", distances[best_match_index])  # Debug print
 
                 # Display results on the frame
@@ -118,7 +110,7 @@ class WebCamApp:
 
     def print_image(self):
         if self.latest_frame is not None:
-            pil_image = Image.fromarray(self.latest_frame)
+            pil_image = Image.fromarray(self.latest_frame)  
             draw = ImageDraw.Draw(pil_image)
             face_shape = self.suggestion_label.cget("text").split(": ")[0] if self.suggestion_label.cget("text") else "Unknown"
             hairstyles = self.suggestion_label.cget("text").split(": ")[1] if ":" in self.suggestion_label.cget("text") else "No suggestions"
@@ -131,12 +123,8 @@ class WebCamApp:
             pil_image.save(temp_file.name)
             os.startfile(temp_file.name)
 
-    def __del__(self):
-        if self.cap is not None:
-            self.cap.release()
-
 # Main reference folder for face shape images
-reference_image_folder = "C:/Users/Chris/OneDrive/Desktop/projectHDv1.0.2/reference_images"
+reference_image_folder =  os.getcwd() + "/reference_images"
 
 # Suggested hairstyles 
 hairstyle_suggestions = {
@@ -149,10 +137,15 @@ hairstyle_suggestions = {
 }
 
 # Background image path
-background_image_path = "C:/Users/Chris/OneDrive/Desktop/projectHD/background2.jpg"
+background_image_path = os.getcwd() + "/background2.jpg"
+
+
+# Load face encodings
+with open('dataset_face_shape.dat', 'rb') as f:
+	all_face_encodings = pickle.load(f)
 
 # Initialize the app
 root = tk.Tk()
 root.geometry("1100x800")
-app = WebCamApp(root, reference_image_folder, hairstyle_suggestions, background_image_path)
+app = WebCamApp(root,  all_face_encodings, hairstyle_suggestions, background_image_path)
 root.mainloop()

@@ -191,9 +191,9 @@ hairstyle_suggestions = {
     "square": ["Style1", "Style2", "Style3"]
 }
 
-background_image_path = "C:/Users/Chris/OneDrive/Desktop/projectHDv1.0.2/background2.jpg"
+background_image_path = os.getcwd() + "/background2.jpg"
 
 root = tk.Tk()
 root.geometry("1100x800")
-app = WebCamApp(root, "C:/Users/Chris/OneDrive/Desktop/projectHDv1.0.2/reference_images", hairstyle_suggestions, background_image_path)
+app = WebCamApp(root, os.getcwd() + "/reference_images", hairstyle_suggestions, background_image_path)
 root.mainloop()
