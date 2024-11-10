@@ -6,7 +6,8 @@ import numpy as np
 import tempfile
 import os
 import time
-import kagglehub
+from threading import Thread
+import imutils
 
 import pickle
 class WebCamApp:
@@ -46,65 +47,95 @@ class WebCamApp:
         self.latest_frame = None
         self.start_time = None
 
+        #Multithreading
+        self.camera_thread = Thread(target=self.update_frame, args=())
+        self.process_thread = Thread(target=self.process_frame, args=())
+        self.camera_thread.daemon = True
+        self.process_thread.daemon = True
+
+        # Caffe
+        self.net = cv2.dnn.readNetFromCaffe("deploy.prototxt.txt", "res10_300x300_ssd_iter_140000.caffemodel")
+
+        # Variable for detection
+        self.detected_shape = None
+
+
     def start_webcam(self):
         # Start webcam capture
         self.cap = cv2.VideoCapture(0)
         if not self.cap.isOpened():
             print("Cannot open webcam")
             return
-        self.start_time = time.time()
-        self.update_frame()
+        self.camera_thread.start()
+        self.process_thread.start()
+        
+        
 
     def update_frame(self):
         # Capture frame-by-frame from webcam
-        ret, frame = self.cap.read()
-        if ret:
-            # Convert frame to RGB
-            rgb_frame = cv2.cvtColor(frame, cv2.COLOR_BGR2RGB)
-            self.latest_frame = rgb_frame  # Store the last frame
+        while True:
+            ret, frame = self.cap.read()
+            frame = imutils.resize(frame, width=400)
+            if ret:
+                # Convert frame to RGB
+                rgb_frame = cv2.cvtColor(frame, cv2.COLOR_BGR2RGB)
+                self.latest_frame = rgb_frame  # Store the last frame
 
-            # Display frame on canvas
-            img = Image.fromarray(rgb_frame)
-            photo = ImageTk.PhotoImage(image=img)
-            self.canvas.create_image(0, 0, anchor=tk.NW, image=self.background_photo)
-            self.canvas.create_image(0, 0, anchor=tk.NW, image=photo)
-            self.photo = photo  # Keep reference to avoid garbage collection
+                # grab the frame dimensions and convert it to a blob
+                (h, w) = self.latest_frame.shape[:2]
+                blob = cv2.dnn.blobFromImage(cv2.resize(frame, (300, 300)), 1.0,
+                    (300, 300), (104.0, 177.0, 123.0))
+            
+                # pass the blob through the network and obtain the detections and
+                # predictions
+                self.net.setInput(blob)
+                detections = self.net.forward()
+                if detections.any():
+                    box = detections[0, 0, 0, 3:7] * np.array([w, h, w, h])
+                    (startX, startY, endX, endY) = box.astype("int")
+            
+                    # draw the bounding box of the face along with the associated
+                    # probability
+                    text = self.detected_shape
+                    y = startY - 10 if startY - 10 > 10 else startY + 10
+                    cv2.rectangle(self.latest_frame, (startX, startY), (endX, endY),
+                        (0, 0, 255), 2)
+                    cv2.putText(self.latest_frame, text, (startX, y),
+                        cv2.FONT_HERSHEY_SIMPLEX, 0.45, (0, 0, 255), 2)
 
-        # Check if 5 seconds have passed
-        if time.time() - self.start_time >= 5:
-            # Stop capturing and process the last frame (determines what frame would be used for processing)
-            self.process_last_frame()
-        else:
-            # Scheduler (lower digit = faster frames)
-            self.window.after(10, self.update_frame)
+                # Display frame on canvas
+                img = Image.fromarray(self.latest_frame)
+                photo = ImageTk.PhotoImage(image=img)
+                self.canvas.create_image(0, 0, anchor=tk.NW, image=photo)
+                self.photo = photo  # Keep reference to avoid garbage collection
+            
 
-    def process_last_frame(self):
-        if self.latest_frame is not None:
-            # Detect faces
-            face_locations = face_recognition.face_locations(self.latest_frame, model="hog")  # Try 'hog' if 'cnn' fails
-            print("Face locations:", face_locations)  # Debug print
-            face_encodings = face_recognition.face_encodings(self.latest_frame, face_locations)
+    def process_frame(self):
+        while True:
+            if self.latest_frame is not None:
+                #Detect faces
+                face_locations = face_recognition.face_locations(self.latest_frame, model="hog")  # Try 'hog' if 'cnn' fails
+                face_encodings = face_recognition.face_encodings(self.latest_frame, face_locations)
 
-            for (top, right, bottom, left), face_encoding in zip(face_locations, face_encodings):
-                # Compare with known face shapes
-                distances = face_recognition.face_distance(self.known_faces, face_encoding)
-                print("Distances:", distances)  # Debug print
-                best_match_index = np.argmin(distances)
+                if face_encodings:
+                    face_encoding = face_encodings[0]
 
-                # Apply a threshold for the closest match
-                #threshold = 0.75
-                # if distances[best_match_index] <= threshold:
-                #     name = self.known_names[best_match_index]
-                # else:
-                #     name = "Unknown"
-                name = self.known_names[best_match_index]
-                print("Best match:", name, "with distance:", distances[best_match_index])  # Debug print
-                # Display results on the frame
-                img_pil = Image.fromarray(self.latest_frame)
-                draw = ImageDraw.Draw(img_pil)
-                draw.rectangle(((left, top), (right, bottom)), outline="green", width=3)
-                draw.text((left, top - 20), name, fill="green")
-                self.latest_frame = np.array(img_pil)
+                    #Compare with known face shapes
+                    distances = face_recognition.face_distance(self.known_faces, face_encoding)
+                    best_match_index = np.argmin(distances)
+
+                    # Apply a threshold for the closest match
+                    threshold = 0.75
+                    if distances[best_match_index] <= threshold:
+                        name = self.known_names[best_match_index]
+                    else:
+                        name = "Unknown"
+                    name = self.known_names[best_match_index]
+                    self.detected_shape = name
+                    print("Best match:", name, "with distance:", distances[best_match_index])  # Debug print
+                    
+                    time.sleep(1)
+            
 
 
     def print_image(self):
