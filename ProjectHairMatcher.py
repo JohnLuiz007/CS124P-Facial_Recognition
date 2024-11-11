@@ -20,7 +20,8 @@ class WebCamApp:
 
         # Hairstyle suggestions
         self.hairstyle_suggestions = hairstyle_suggestions
-        self.temp_image = ImageTk.PhotoImage(Image.open(os.getcwd()+"\\dethdeth.jpg").resize((300, 300)))
+        self.logo_image = ImageTk.PhotoImage(Image.open(os.getcwd()+"\\logo.png").resize((300, 300)))
+        self.haircut_image = None
 
         # Canvas for webcam
         self.canvas = tk.Canvas(self.window,width=300, bd=0, highlightthickness=0)
@@ -32,7 +33,7 @@ class WebCamApp:
         self.suggestion_label = tk.Label(self.window, text="Haircut Matcher", font=("Helvetica", 18), fg="black")
         self.suggestion_label.pack()
 
-        self.image_label = tk.Label(root, image=self.temp_image)
+        self.image_label = tk.Label(root, image=self.logo_image)
         self.image_label.pack()
         
         
@@ -76,13 +77,21 @@ class WebCamApp:
         self.process_thread.start()
         
     def suggest_haircut(self):
-        if self.detected_shape:
-            self.suggestions = self.hairstyle_suggestions[self.detected_shape]
-            self.suggestion_label.config(text=self.hairstyle_suggestions[self.detected_shape][self.preview_index])
-        else:
+        try:
+            if self.detected_shape:
+                self.suggestions = self.hairstyle_suggestions[self.detected_shape]
+                self.haircut_image = ImageTk.PhotoImage(Image.open(os.getcwd()+f"\\Haircuts\\{self.detected_shape}\\{self.hairstyle_suggestions[self.detected_shape][self.preview_index]}.jpg").resize((300, 300)))
+                self.image_label.config(image=self.haircut_image)
+                self.suggestion_label.config(text=self.hairstyle_suggestions[self.detected_shape][self.preview_index])
+            else:
+                self.image_label.config(image=self.logo_image)
+                self.suggestion_label.config(text="Haircut Matcher")
+                self.suggestions = None
+        except KeyError:
+            self.image_label.config(image=self.logo_image)
             self.suggestion_label.config(text="Haircut Matcher")
             self.suggestions = None
-            print("NO FACE DETECTED!")
+            self.detected_shape = None
 
     def change_suggestion_preview(self, value):
         if self.suggestions:
@@ -92,6 +101,8 @@ class WebCamApp:
                     self.preview_index = 0
                 else:
                     self.preview_index = len(self.suggestions) - 1
+            self.haircut_image = ImageTk.PhotoImage(Image.open(os.getcwd()+f"\\Haircuts\\{self.detected_shape}\\{self.hairstyle_suggestions[self.detected_shape][self.preview_index]}.jpg").resize((300, 300)))
+            self.image_label.config(image=self.haircut_image)
             self.suggestion_label.config(text=self.hairstyle_suggestions[self.detected_shape][self.preview_index])
         else:
             print("NO FACE DETECTED!")
@@ -149,18 +160,28 @@ class WebCamApp:
                     distances = face_recognition.face_distance(self.known_faces, face_encoding)
                     best_match_index = np.argmin(distances)
 
-                    # Apply a threshold for the closest match
-                    threshold = 0.75
-                    if distances[best_match_index] <= threshold:
-                        name = self.known_names[best_match_index]
-                    else:
-                        name = None
-                    name = self.known_names[best_match_index]
+
+                    best_matched_indexes = [i for (i, b) in enumerate(distances) if b <= 0.65]
+                    counts = {}
+
+                    # loop over the matched indexes and maintain a count for
+                    # each recognized face face
+                    for i in best_matched_indexes:
+                        name = self.known_names[i]
+                        counts[name] = counts.get(name, 0) + 1
+
+                    # determine the recognized face with the largest number
+                    # of votes (note: in the event of an unlikely tie Python
+                    # will select first entry in the dictionary)
+                    name = max(counts, key=counts.get, default=None)
                     self.detected_shape = name
+
+                    print(counts)
                     print("Best match:", name, "with distance:", distances[best_match_index])  # Debug print
                 else:
                     name = None
                     self.detected_shape = None
+                
                 self.suggest_haircut()
             time.sleep(1)
 
