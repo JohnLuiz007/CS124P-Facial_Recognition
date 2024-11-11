@@ -3,7 +3,6 @@ import cv2
 from PIL import Image, ImageTk, ImageDraw, ImageFont
 import face_recognition
 import numpy as np
-import tempfile
 import os
 import time
 from threading import Thread
@@ -11,9 +10,9 @@ import imutils
 
 import pickle
 class WebCamApp:
-    def __init__(self, window, all_face_encodings, hairstyle_suggestions, background_image_path):
+    def __init__(self, window, all_face_encodings, hairstyle_suggestions):
         self.window = window
-        self.window.title("Webcam App")
+        self.window.title("Hair Matcher")
 
         # Load reference images and compute average encoding for each face shape
         self.known_faces = np.array(list(all_face_encodings["encodings"]))
@@ -21,26 +20,28 @@ class WebCamApp:
 
         # Hairstyle suggestions
         self.hairstyle_suggestions = hairstyle_suggestions
-
-        # Load and set the background image
-        self.background_image = Image.open(background_image_path)
-        self.background_photo = ImageTk.PhotoImage(self.background_image)
-
-        # Start button to initiate detection
-        self.start_button = tk.Button(self.window, text="Start Detector", command=self.start_webcam, height=5, width=125)
-        self.start_button.pack(pady=10, padx=10)
-
-        # Print button
-        self.print_button = tk.Button(self.window, text="Print Image", command=self.print_image, height=5, width=125)
-        self.print_button.pack(pady=10, padx=10)
-
-        # Label for hairstyle suggestions
-        self.suggestion_label = tk.Label(self.window, text="", font=("Helvetica", 14), fg="black")
-        self.suggestion_label.pack(pady=10)
+        self.temp_image = ImageTk.PhotoImage(Image.open(os.getcwd()+"\\dethdeth.jpg").resize((300, 300)))
 
         # Canvas for webcam
-        self.canvas = tk.Canvas(self.window, width=self.background_image.width, height=self.background_image.height)
-        self.canvas.pack()
+        self.canvas = tk.Canvas(self.window,width=300, bd=0, highlightthickness=0)
+        self.canvas.pack(padx=0, pady=0)
+
+        
+        
+        # Label for hairstyle suggestions
+        self.suggestion_label = tk.Label(self.window, text="Haircut Matcher", font=("Helvetica", 18), fg="black")
+        self.suggestion_label.pack()
+
+        self.image_label = tk.Label(root, image=self.temp_image)
+        self.image_label.pack()
+        
+        
+        self.button_frame = tk.Frame(root, width=600, height=100)
+        self.prev_button = tk.Button(self.button_frame, text="<", width=20, command=lambda: self.change_suggestion_preview(value=-1))
+        self.prev_button.grid(row=0, column=0)
+        self.next_button = tk.Button(self.button_frame, text=">", width=20, command=lambda: self.change_suggestion_preview(value=1))
+        self.next_button.grid(row=0, column=1)
+        self.button_frame.pack()
 
         # Initialize variables for capturing
         self.cap = None
@@ -58,6 +59,11 @@ class WebCamApp:
 
         # Variable for detection
         self.detected_shape = None
+        self.suggestions = []
+        self.preview_index = 0
+
+        # Init
+        self.start_webcam()
 
 
     def start_webcam(self):
@@ -69,13 +75,32 @@ class WebCamApp:
         self.camera_thread.start()
         self.process_thread.start()
         
-        
+    def suggest_haircut(self):
+        if self.detected_shape:
+            self.suggestions = self.hairstyle_suggestions[self.detected_shape]
+            self.suggestion_label.config(text=self.hairstyle_suggestions[self.detected_shape][self.preview_index])
+        else:
+            self.suggestion_label.config(text="Haircut Matcher")
+            self.suggestions = None
+            print("NO FACE DETECTED!")
+
+    def change_suggestion_preview(self, value):
+        if self.suggestions:
+            self.preview_index += value
+            if self.preview_index > (len(self.suggestions) - 1) or self.preview_index < 0:
+                if self.preview_index > (len(self.suggestions) - 1):
+                    self.preview_index = 0
+                else:
+                    self.preview_index = len(self.suggestions) - 1
+            self.suggestion_label.config(text=self.hairstyle_suggestions[self.detected_shape][self.preview_index])
+        else:
+            print("NO FACE DETECTED!")
 
     def update_frame(self):
         # Capture frame-by-frame from webcam
         while True:
             ret, frame = self.cap.read()
-            frame = imutils.resize(frame, width=400)
+            frame = imutils.resize(frame, width=300)
             if ret:
                 # Convert frame to RGB
                 rgb_frame = cv2.cvtColor(frame, cv2.COLOR_BGR2RGB)
@@ -129,45 +154,24 @@ class WebCamApp:
                     if distances[best_match_index] <= threshold:
                         name = self.known_names[best_match_index]
                     else:
-                        name = "Unknown"
+                        name = None
                     name = self.known_names[best_match_index]
                     self.detected_shape = name
                     print("Best match:", name, "with distance:", distances[best_match_index])  # Debug print
-                    
-                    time.sleep(1)
-            
-
-
-    def print_image(self):
-        if self.latest_frame is not None:
-            pil_image = Image.fromarray(self.latest_frame)  
-            draw = ImageDraw.Draw(pil_image)
-            face_shape = self.suggestion_label.cget("text").split(": ")[0] if self.suggestion_label.cget("text") else "Unknown"
-            hairstyles = self.suggestion_label.cget("text").split(": ")[1] if ":" in self.suggestion_label.cget("text") else "No suggestions"
-            text_to_draw = f"Face Shape: {face_shape}\nSuggested Hairstyles: {hairstyles}"
-
-            font = ImageFont.load_default()
-            draw.text((10, 10), text_to_draw, fill="green", font=font)
-
-            temp_file = tempfile.NamedTemporaryFile(delete=False, suffix='.png')
-            pil_image.save(temp_file.name)
-            os.startfile(temp_file.name)
-
-# Main reference folder for face shape images
-reference_image_folder =  os.getcwd() + "/reference_images"
+                else:
+                    name = None
+                    self.detected_shape = None
+                self.suggest_haircut()
+            time.sleep(1)
 
 # Suggested hairstyles 
 hairstyle_suggestions = {
-    "diamond face shape": ["Style1", "Style2", "Style3"],
-    "heart face shape": ["Style1", "Style2", "Style3"],
-    "oblong face shape": ["Style1", "Style2", "Style3"],
-    "oval face shape": ["Style1", "Style2", "Style3"],
-    "round face shape": ["Style1", "Style2", "Style3"],
-    "square face shape": ["Style1", "Style2", "Style3"]
+    "Heart": ["Undercut", "Slick Back", "Fringe"],
+    "Oblong": ["Crew Cut", "Tapered Sides", "Textured Crop"],
+    "Oval": ["Taper Fade", "Side Part", "Caesar Cut"],
+    "Round": ["Textured Top", "High Fade", "Angular Fringe"],
+    "Square": ["Buzz Cut", "French Crop", "Pompadour"]
 }
-
-# Background image path
-background_image_path = os.getcwd() + "/background2.jpg"
 
 
 # Load face encodings
@@ -176,6 +180,7 @@ with open('dataset_face_shape.dat', 'rb') as f:
 
 # Initialize the app
 root = tk.Tk()
-root.geometry("1100x800")
-app = WebCamApp(root,  all_face_encodings, hairstyle_suggestions, background_image_path)
+root.resizable(width=False, height=False)
+root.geometry("500x700")
+app = WebCamApp(root,  all_face_encodings, hairstyle_suggestions)
 root.mainloop()

@@ -7,7 +7,6 @@ data_set = {"names": [], "encodings":[]}
 path = kagglehub.dataset_download("niten19/face-shape-dataset")
 # Iterate through each subfolder in the reference image folder
 for face_shape in os.listdir(path+"\FaceShape Dataset\\testing_set"):
-    x = 1
     for image_file in os.listdir(path+"\FaceShape Dataset\\testing_set\\"+face_shape):
         image_path = os.path.join(path+"\FaceShape Dataset\\testing_set\\"+face_shape, image_file)
         image = face_recognition.load_image_file(image_path)
